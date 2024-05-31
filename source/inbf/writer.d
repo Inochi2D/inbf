@@ -8,18 +8,47 @@ module source.inbf.writer;
 import inbf.value;
 import numem.all;
 
-@nogc nothrow:
+@nogc:
 
 private {
-    void writeValueTo(ref InbfValue value, ref Stream stream) {
-        if (value.isArray()) {
-            ubyte[1] dt = [value.getType()];
+
+    void writeValueHeader(ref InbfValue value, ref Stream stream) {
+        
+        // Write type
+        {
+            ubyte[1] dt = [value.getRawType()];
             stream.write(dt);
         }
+    }
 
-        // switch(value.getType()) {
+    void writeBasicValueTo(ref InbfValue value, ref Stream stream) {
 
-        // }
+    }
+
+    void writeValueTo(bool withHeader=true)(ref InbfValue value, ref Stream stream) {
+
+        // Arrays will not write headers since the array implictly has them
+        static if (withHeader)
+            writeValueHeader(value, stream);
+
+        // Arrays are a special case
+        if (value.isArray()) {
+            ubyte[4] dt = toEndian(cast(int)value.length, Endianess.littleEndian);
+            stream.write(dt);
+            foreach(i; 0..value.length()) {
+                switch(value.getType()) {
+                    case InbfValueType.i8:
+                        writeValueTo!false(value.get!ubyte(i).unwrap(), stream);
+                }
+            }
+        }
+
+        switch(value.getType()) {
+            case InbfValueType.f32:
+                break;
+            default:
+                break;
+        }
     }
 }
 

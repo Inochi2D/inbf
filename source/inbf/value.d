@@ -5,9 +5,7 @@
     Authors: Luna Nielsen
 */
 module inbf.value;
-import inbf.common;
-import numem.mem.vector;
-import numem.mem.map;
+import inbf.ex;
 import numem.all;
 import std.traits;
 
@@ -26,7 +24,6 @@ enum InbfValueType : ubyte {
     str         = 11,
     bin         = 12,
     compound    = 13,
-    compressed  = 64,
     array       = 128,
 }
 
@@ -34,13 +31,12 @@ enum InbfValueType : ubyte {
     A value in the INBF tree
 */
 class InbfValue {
-@nogc nothrow:
+@nogc:
 private:
     
     InbfValueType cType;
     union {
-        ulong uNum;
-        long iNum;
+        ulong iNum;
         double fNum;
         nstring tVal;
         vector!InbfValue arrVal;
@@ -60,14 +56,14 @@ public:
             else static if (T.sizeof == 4) cType = InbfValueType.i32;
             else static if (T.sizeof == 8) cType = InbfValueType.i64;
 
-            this.uNum = cast(long)val;
+            this.iNum = cast(ulong)val;
         } else {
             static if (T.sizeof == 1) cType = InbfValueType.u8;
             else static if (T.sizeof == 2) cType = InbfValueType.u16;
             else static if (T.sizeof == 4) cType = InbfValueType.u32;
             else static if (T.sizeof == 8) cType = InbfValueType.u64;
 
-            this.uNum = cast(ulong)val;
+            this.iNum = cast(ulong)val;
         }
     }
 
@@ -124,6 +120,13 @@ public:
     }
 
     /**
+        Gets the raw type id
+    */
+    ubyte getRawType() {
+        return cType;
+    }
+
+    /**
         Gets the type of the value
     */
     InbfValueType getType() {
@@ -135,13 +138,6 @@ public:
     */
     bool isArray() {
         return (cType & InbfValueType.array) == InbfValueType.array;
-    }
-
-    /**
-        Gets whether the value is compressed with LZMA.
-    */
-    bool isCompressed() {
-        return (cType & InbfValueType.compressed) == InbfValueType.compressed;
     }
 
     /**
@@ -215,116 +211,77 @@ public:
         }
     }
 
-    /**
-        Gets the basic value stored in this value
-    */
-    Option!T get(T)() if (isIntegral!T) {
+    vector!ubyte get(T)() if (is(T == vector!ubyte)) {
+        if (!this.isBinary) {
 
-        // Value error
-        if (!this.isInteger()) {
-            return Option!T(InbfError(nstring("Value is not an integer!")));
-        }
-
-        static if (isSigned!T) {
-            return Option!T(cast(T)iNum);
-        } else {
-            return Option!T(cast(T)uNum);
         }
     }
 
     /**
         Gets the basic value stored in this value
     */
-    Option!T get(T)() if (isFloatingPoint!T) {
+    T get(T)() if (isIntegral!T) {
+        enforce(this.isInteger(), nogc_new!InbfTypeMismatchException("int", T.stringof));
 
-        // Value error
-        if (!this.isFloating()) {
-            return Option!T(InbfError(nstring("Value is not a floating point number!")));
-        }
-
-        return Option!T(cast(T)fNum);
+        return cast(T)iNum;
     }
 
     /**
         Gets the basic value stored in this value
     */
-    Option!T get(T)() if (is(T == nstring)) {
+    T get(T)() if (isFloatingPoint!T) {
+        enforce(this.isFloating(), nogc_new!InbfTypeMismatchException("float", T.stringof));
 
-        // Value error
-        if (!this.isString()) {
-            return Option!T(InbfError(nstring("Value is not a string!")));
-        }
+        return cast(T)fNum;
+    }
 
-        return Option!T(tVal);
+    /**
+        Gets the basic value stored in this value
+    */
+    T get(T)() if (is(T == nstring)) {
+        enforce(this.isString(), nogc_new!InbfTypeMismatchException("nstring", T.stringof));
+
+        return tVal;
     }
 
     /**
         Gets the basic value stored at the key in this value
     */
-    Option!T get(T)(nstring key) {
-
-        // Value error
-        if (!this.isCompound()) {
-            return Option!T(InbfError("Value is not a compound!"));
-        }
-
-        // Index error
-        if (key.toString() !in compVal) {
-            nstring err = key;
-            err ~= " was not found in compound!";
-            return Option!T(InbfError(err));
-        }
+    T get(T)(nstring key) {
+        enforce(this.isCompound(), nogc_new!InbfInvalidOperation("value can not be indexed."));
+        enforce(key.toString() in compVal, nogc_new!InbfInvalidOperation("Key was not found in compound!"));
 
         static if (is(T == InbfValue)) {
-            return Option!T(compVal[key.toString()]);
+            return compVal[key.toString()];
         } else {
-            Option!InbfValue val = this.get!InbfValue(key);
-            if (val.valid()) {
-                return val.value.get!T();
-            } else {
-                return Option!T(val.err);
-            }
+            InbfValue val = this.get!InbfValue(key);
+            return val.get!T();
         }
     }
 
     /**
         Gets the basic value stored at the key in this value
     */
-    Option!T get(T)(size_t i) {
-        if (!this.isArray()) {
-            return Option!T(InbfError("Value is not a compound!"));
-        }
+    T get(T)(size_t i) {
+        enforce(this.isArray(), nogc_new!InbfInvalidOperation("value can not be indexed."));
+        enforce(i < arrVal.size(), nogc_new!InbfInvalidOperation("Index out of range"));
 
-        if (i > arrVal.size()) {
-            return Option!T(InbfError("Index out of range!"));
-        }
-
-        static if (is(T == InbfValue)) {
-            return Option!T(arrVal[i]);
-        } else {
-            return Option!T(arrVal[i]);
-        }
+        return arrVal[i];
     }
 
     /**
         Sets a value in the compound
     */
-    Option!void set(nstring key, InbfValue val) {
+    void set(nstring key, InbfValue val) {
         import core.stdc.stdlib : malloc;
-        if (!this.isCompound()) {
-            return Option!void(InbfError("Value is not a compound!"));
-        }
-
-        string str = cast(string)(malloc(key.size())[0..key.size()]);
-        (cast(char[])str[0..key.size()]) = key[0..$];
+        enforce(this.isCompound(), nogc_new!InbfInvalidOperation("value can not be indexed."));
 
         // Remove old value
-        if (str in compVal) {
-            compVal.remove(str);
-        } 
+        if (key.toDString() in compVal) {
+            compVal.remove(key.toDString());
+        }
 
-        compVal[str] = val;
-        return Option!void(null);
+        compVal[key.toDString()] = val;
     }
 
     /**
@@ -363,31 +320,40 @@ public:
 @("Creating integer")
 unittest {
     InbfValue val = nogc_new!InbfValue(42);
-    assert(val.get!uint().unwrap() == 42);
+    assert(val.get!uint() == 42);
 }
 
 @("Creating float")
 unittest {
     InbfValue val = nogc_new!InbfValue(42.0);
-    assert(val.get!float().unwrap() == 42.0);
+    assert(val.get!float() == 42.0);
 }
 
 @("Creating string")
 unittest {
     InbfValue val = nogc_new!InbfValue(nstring("Hello, world!"));
-    assert(val.get!nstring().unwrap().toString() == "Hello, world!");
+    assert(val.get!nstring().toString() == "Hello, world!");
 }
 
 @("Adding elements to compound")
 unittest {
-    InbfValue val = nogc_new!(InbfValue)(42);
+    InbfValue val = nogc_new!InbfValue(42);
 
     InbfValue compound = InbfValue.createCompound();
     compound.set(nstring("a"), val);
 
-    uint v = 
-        compound.get!uint(nstring("a"))
-        .unwrap();
-
+    uint v = compound.get!uint(nstring("a"));
     assert(v == 42);
+}
+
+@("Catching exception")
+unittest {
+    try {
+        InbfValue val = nogc_new!InbfValue(42);
+        val.get!float(nstring("uwu"));
+
+        assert(0, "Should've thrown!");
+    } catch (NuException ex) {
+        
+    }
 }

@@ -5,7 +5,7 @@ copyright "Copyright © 2024, Inochi2D Project"
 license "BSD-2-Clause"
 
 dependency "silly" version="~>1.1.1"
-dependency "numem" version="~>0.6.4"
+dependency "numem" version="~>0.8.1"
 
 targetPath "out/"
 
