@@ -5,9 +5,17 @@ copyright "Copyright © 2024, Inochi2D Project"
 license "BSD-2-Clause"
 
 dependency "silly" version="~>1.1.1"
-dependency "numem" version="~>0.8.2"
+dependency "numem" version="~>0.8.3"
 
 targetPath "out/"
 
 copyFiles "inbf.h"
-targetType "dynamicLibrary"
+workingDirectory "out/"
+
+configuration "dynamic" {
+    targetType "dynamicLibrary"
+}
+
+configuration "static" {
+    targetType "staticLibrary"
+}
