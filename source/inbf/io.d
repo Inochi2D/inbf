@@ -1,15 +1,23 @@
 /*
-    Copyright © 2020, Inochi2D Project
+    Copyright © 2024, Inochi2D Project
     Distributed under the 2-Clause BSD License, see LICENSE file.
     
     Authors: Luna Nielsen
 */
-module inbf.writer;
+
+/**
+    I/O functions
+*/
+module inbf.io;
 import inbf.ex;
 import inbf.value;
 import numem.all;
 
 @nogc:
+
+//
+//          WRITER INTERFACE
+//
 
 private {
 
@@ -79,7 +87,7 @@ private {
 /**
     Writes INBF value to stream
 */
-void writeTo(ref InbfValue value, ref Stream stream) {
+void writeInbf(ref InbfValue value, ref Stream stream) {
     SWriteType writer = nogc_new!(SWriteType)(stream);
 
     value.writeValue(writer);
@@ -98,5 +106,33 @@ unittest {
     
     Stream s = openFile(nstring("test.inbf"), "wb");
 
-    compound.writeTo(s);
+    compound.writeInbf(s);
 }
+
+//
+//          READER INTERFACE
+//
+
+// private {
+
+//     alias SReadType = StreamReader!(Endianess.littleEndian);
+
+//     bool isTagAnArray()
+
+//     InbfValue readValueFrom(bool readHeader)(ref SReadType stream) {
+//         return null;
+//     }
+
+// }
+
+// /**
+//     Writes INBF value to stream
+// */
+// InbfValue readInbf(ref Stream stream) {
+//     SReadType reader = nogc_new!(SReadType)(stream);
+//     InbfValue ret = readValueFrom(reader);
+
+//     // Done reading
+//     nogc_delete(reader);
+//     return ret;
+// }

@@ -4,7 +4,7 @@ CC=clang
 DC=dub
 
 # CFLAGS will be the options passed to the compiler.
-CFLAGS=-I"../../" -c -Wall
+CFLAGS=-I"../../out/" -c -Wall
 LFLAGS=-L"../../out/" -linbf -Wl,-rpath,"@executable_path"
 
 OBJECTS=test.o
