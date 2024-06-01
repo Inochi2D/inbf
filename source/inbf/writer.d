@@ -4,7 +4,8 @@
     
     Authors: Luna Nielsen
 */
-module source.inbf.writer;
+module inbf.writer;
+import inbf.ex;
 import inbf.value;
 import numem.all;
 
@@ -12,42 +13,65 @@ import numem.all;
 
 private {
 
-    void writeValueHeader(ref InbfValue value, ref Stream stream) {
-        
-        // Write type
-        {
-            ubyte[1] dt = [value.getRawType()];
-            stream.write(dt);
-        }
-    }
+    alias SWriteType = StreamWriter!(Endianess.littleEndian);
 
-    void writeBasicValueTo(ref InbfValue value, ref Stream stream) {
-
-    }
-
-    void writeValueTo(bool withHeader=true)(ref InbfValue value, ref Stream stream) {
+    void writeValue(bool withHeader=true)(ref InbfValue value, ref SWriteType stream) {
 
         // Arrays will not write headers since the array implictly has them
         static if (withHeader)
-            writeValueHeader(value, stream);
+            stream.write(value.getRawType());
 
         // Arrays are a special case
         if (value.isArray()) {
-            ubyte[4] dt = toEndian(cast(int)value.length, Endianess.littleEndian);
-            stream.write(dt);
+            stream.write(cast(int)value.length);
             foreach(i; 0..value.length()) {
-                switch(value.getType()) {
-                    case InbfValueType.i8:
-                        writeValueTo!false(value.get!ubyte(i).unwrap(), stream);
-                }
+                InbfValue val = value.get!InbfValue(i);
+                writeValue!false(val, stream);
             }
+            return;
         }
 
         switch(value.getType()) {
+            case InbfValueType.i8:
+                stream.write(value.get!ubyte());
+                break;
+            case InbfValueType.i16:
+                stream.write(value.get!ushort());
+                break;
+            case InbfValueType.i32:
+                stream.write(value.get!uint());
+                break;
+            case InbfValueType.i64:
+                stream.write(value.get!ulong());
+                break;
             case InbfValueType.f32:
+                stream.write(value.get!float());
+                break;
+            case InbfValueType.f64:
+                stream.write(value.get!double());
+                break;
+            case InbfValueType.str:
+                stream.write(value.length());
+                stream.write(value.get!nstring());
+                break;
+            case InbfValueType.bin:
+                stream.write(value.length());
+                stream.write(value.get!(vector!ubyte)());
+                break;
+            case InbfValueType.compound:
+                auto compound = value.getCompound();
+                stream.write(cast(int)compound.length());
+                foreach(entry; compound.byKeyValue) {
+
+                    // TODO: Add string slice support to StreamWriter
+                    stream.write(cast(int)entry.key.length);
+                    stream.write(entry.key);
+
+                    entry.value.writeValue(stream);
+                }
                 break;
             default:
-                break;
+                throw nogc_new!InbfInvalidOperation("Unknown type recieved.");
         }
     }
 }
@@ -56,5 +80,23 @@ private {
     Writes INBF value to stream
 */
 void writeTo(ref InbfValue value, ref Stream stream) {
+    SWriteType writer = nogc_new!(SWriteType)(stream);
+
+    value.writeValue(writer);
+
+    // Done writing
+    nogc_delete(writer);
+}
+
+@("Test writing")
+unittest {
     
+    InbfValue val = nogc_new!InbfValue(42);
+
+    InbfValue compound = InbfValue.createCompound();
+    compound.set(nstring("a"), val);
+    
+    Stream s = openFile(nstring("test.inbf"), "wb");
+
+    compound.writeTo(s);
 }

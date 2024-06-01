@@ -10,21 +10,17 @@ import numem.all;
 import std.traits;
 
 enum InbfValueType : ubyte {
-    unk         = 0, /// UNKNOWN
-    i8          = 1,
-    i16         = 2,
-    i32         = 3,
-    i64         = 4,
-    u8          = 5,
-    u16         = 6,
-    u32         = 7,
-    u64         = 8,
-    f32         = 9,
-    f64         = 10,
-    str         = 11,
-    bin         = 12,
-    compound    = 13,
-    array       = 128,
+    unk         = 0,    /// UNKNOWN
+    i8          = 1,    /// 8 bit integer
+    i16         = 2,    /// 16 bit integer
+    i32         = 3,    /// 32 bit integer
+    i64         = 4,    /// 64 bit integer
+    f32         = 9,    /// 32 bit float
+    f64         = 10,   /// 64 bit float
+    str         = 11,   /// UTF-8 string
+    bin         = 12,   /// Binary data
+    compound    = 13,   /// Compound
+    array       = 128,  /// Array
 }
 
 /**
@@ -40,7 +36,7 @@ private:
         double fNum;
         nstring tVal;
         vector!InbfValue arrVal;
-        map!(string, InbfValue) compVal;
+        map!(nstring, InbfValue) compVal;
         vector!ubyte bVal;
     }
 
@@ -50,21 +46,12 @@ public:
         Constructs a INBF value
     */
     this(T)(T val) if (isIntegral!T) {
-        static if (isSigned!T) {
-            static if (T.sizeof == 1) cType = InbfValueType.i8;
-            else static if (T.sizeof == 2) cType = InbfValueType.i16;
-            else static if (T.sizeof == 4) cType = InbfValueType.i32;
-            else static if (T.sizeof == 8) cType = InbfValueType.i64;
+        static if (T.sizeof == 1) cType = InbfValueType.i8;
+        else static if (T.sizeof == 2) cType = InbfValueType.i16;
+        else static if (T.sizeof == 4) cType = InbfValueType.i32;
+        else static if (T.sizeof == 8) cType = InbfValueType.i64;
 
-            this.iNum = cast(ulong)val;
-        } else {
-            static if (T.sizeof == 1) cType = InbfValueType.u8;
-            else static if (T.sizeof == 2) cType = InbfValueType.u16;
-            else static if (T.sizeof == 4) cType = InbfValueType.u32;
-            else static if (T.sizeof == 8) cType = InbfValueType.u64;
-
-            this.iNum = cast(ulong)val;
-        }
+        this.iNum = cast(ulong)val;
     }
 
     /**
@@ -202,6 +189,7 @@ public:
     size_t length() {
         switch(cType) {
             case InbfValueType.bin:         return bVal.size();
+            case InbfValueType.str:         return tVal.size();
             case InbfValueType.compound:    return compVal.length();
             default:
                 if (isArray()) {
@@ -212,9 +200,9 @@ public:
     }
 
     vector!ubyte get(T)() if (is(T == vector!ubyte)) {
-        if (!this.isBinary) {
+        enforce(this.isBinary(), nogc_new!InbfTypeMismatchException("vector!ubyte", T.stringof));
 
-        }
+        return bVal;
     }
 
     /**
@@ -249,14 +237,21 @@ public:
     */
     T get(T)(nstring key) {
         enforce(this.isCompound(), nogc_new!InbfInvalidOperation("value can not be indexed."));
-        enforce(key.toString() in compVal, nogc_new!InbfInvalidOperation("Key was not found in compound!"));
+        enforce(key in compVal, nogc_new!InbfInvalidOperation("Key was not found in compound!"));
 
         static if (is(T == InbfValue)) {
-            return compVal[key.toString()];
+            return compVal[key];
         } else {
-            InbfValue val = this.get!InbfValue(key);
-            return val.get!T();
+            return compVal[key].get!T();
         }
+    }
+
+    /**
+        Gets the compound map
+    */
+    map!(nstring, InbfValue)* getCompound() {
+        enforce(this.isCompound(), nogc_new!InbfInvalidOperation("value can not be indexed."));
+        return &compVal;
     }
 
     /**
@@ -266,7 +261,11 @@ public:
         enforce(this.isArray(), nogc_new!InbfInvalidOperation("value can not be indexed."));
         enforce(i < arrVal.size(), nogc_new!InbfInvalidOperation("Index out of range"));
 
-        return arrVal[i];
+        static if (is(T == InbfValue)) {
+            return arrVal[i];
+        } else {
+            return arrVal[i].get!T();
+        }
     }
 
     /**
@@ -277,11 +276,11 @@ public:
         enforce(this.isCompound(), nogc_new!InbfInvalidOperation("value can not be indexed."));
 
         // Remove old value
-        if (key.toDString() in compVal) {
-            compVal.remove(key.toDString());
+        if (key in compVal) {
+            compVal.remove(key);
         }
 
-        compVal[key.toDString()] = val;
+        compVal[key] = val;
     }
 
     /**
@@ -302,7 +301,7 @@ public:
     bool has(nstring key) {
         if (!this.isCompound()) return false;
 
-        return (key.toString() in compVal) !is null;
+        return (key in compVal) !is null;
     }
 
     /**
@@ -311,8 +310,8 @@ public:
     void remove(nstring key) {
         if (!this.isCompound()) return;
 
-        if (key.toString() in compVal) {
-            compVal.remove(key.toString());
+        if (key in compVal) {
+            compVal.remove(key);
         }
     }
 }
@@ -354,6 +353,6 @@ unittest {
 
         assert(0, "Should've thrown!");
     } catch (NuException ex) {
-        
+
     }
 }
